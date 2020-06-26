@@ -24,6 +24,7 @@ def dice_coef(predict, target, axis=1, eps=1e-6):
     return tf.reduce_mean(input_tensor=dice, axis=0)  # average over batch
 
 
+
 def partial_losses(predict, target):
     n_classes = predict.shape[-1]
 
@@ -34,25 +35,28 @@ def partial_losses(predict, target):
     
     # Flattened logits and softmax - in FP32
     #print("No LOGITS", predict)
-    flat_logits = tf.reshape(predict, [tf.shape(predict)[0], -1, n_classes]) #No son exactamente logits, ya han pasado por softmax en este punto
-    flat_logits = tf.cast(flat_logits, tf.float32)
+    flat_predictions = tf.reshape(tf.cast(predict, tf.float32), [tf.shape(predict)[0], -1, n_classes]) #No son exactamente logits, ya han pasado por softmax en este punto
+    #flat_logits = tf.cast(flat_logits, tf.float32)
 
     # One hot encoding
     #flat_labels = tf.keras.backend.flatten(target)
     #print("PRE FLAT", target)
     flat_labels = tf.reshape(target, [tf.shape(target)[0], -1])
     #one_hot_labels = tf.one_hot(indices=flat_labels,depth=n_classes,dtype=tf.float32)
-    one_hot_labels = tf.keras.backend.one_hot(flat_labels, n_classes)
+    one_hot_labels = tf.keras.backend.one_hot(flat_labels, n_classes) 
 
-    #print("FLAT LOGITS", flat_logits)
-    #print("FLAT LABELS", flat_labels)
-    #print("ONE HOT", one_hot_labels)
+    print("FLAT LOGITS", tf.shape(flat_predictions))
+    print("FLAT LABELS", tf.shape(flat_labels))
+    print("ONE HOT", tf.shape(one_hot_labels))
+    print("ONE HOT SUM", tf.reduce_sum(tf.reduce_sum(one_hot_labels, axis=-1), axis = -1))
 
     #crossentropy_loss = tf.reduce_mean(input_tensor=tf.keras.backend.binary_crossentropy(output=flat_logits, target=flat_labels),name='cross_loss_ref')
     
-    #dice_loss = tf.reduce_mean(input_tensor=1 - dice_coef(flat_logits, one_hot_labels), name='dice_loss_ref')
+    dice_loss = tf.reduce_mean(input_tensor=1 - dice_coef(flat_predictions, one_hot_labels), name='dice_loss_ref')
+    print("DICE_LOSS", dice_loss)
     cce = tf.keras.losses.CategoricalCrossentropy()
-    loss = cce(one_hot_labels, flat_logits)
-    return loss, loss
+    loss = cce(one_hot_labels, flat_predictions)
+    #return loss, loss
     #return dice_loss, dice_loss
+    return loss, dice_loss
     #return crossentropy_loss, dice_loss

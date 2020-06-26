@@ -53,7 +53,7 @@ def meta_eval(iterator, n_val_samples, eval_id,params, model, dataset, logger, s
     for iteration_eval, (id_eval_data,images_eval, labels_eval) in enumerate(iterator):
         print("id_eval_image_level", id_eval_data)
         images_eval = tf.reshape(images_eval, images_eval.shape + [1])
-        labels_eval = tf.reshape(labels_eval, labels_eval.shape + [1])
+        #labels_eval = tf.reshape(labels_eval, labels_eval.shape + [1])
         output_eval_map = validation_step(images_eval, labels_eval)
              
         if iteration_eval >= eval_size // params.batch_size:
@@ -142,7 +142,7 @@ def train_and_meta_eval(params, model, dataset, logger, augment = True):
             #print("")
             #print("ID DATA TRAIN", id_data)
             images = tf.reshape(images, images.shape + [1])
-            labels = tf.reshape(labels, labels.shape + [1])
+            #labels = tf.reshape(labels, labels.shape + [1])
             loss, output_map = train_step(images, labels, warmup_batch=iteration == 0)
             if (hvd.rank() == 0) and (iteration % params.log_every == 0):
                 print("")
@@ -179,7 +179,8 @@ def tensorboard_sumaries(log_dir, images, labels, output_map, scalars_dict, inpu
     mid_image = int(input_shape[2] / 2)
     step_im = 1            
     n_feats = (images[0, :, :, mid_image:mid_image + step_im, 0:1] + np.abs(np.min(images)) )/(np.max(images) + np.abs(np.min(images)))
-    n_labels = 85*tf.cast(labels[0, :, :, mid_image:mid_image + step_im, 0:1], dtype=tf.uint8)
+    n_labels = 85*tf.cast(labels[0, :, :, mid_image:mid_image + step_im], dtype=tf.uint8)
+    n_labels = tf.expand_dims(n_labels, -1)
     
     writer = tf.summary.create_file_writer(log_dir)       
     #Add summaries for tensorboard
@@ -187,6 +188,7 @@ def tensorboard_sumaries(log_dir, images, labels, output_map, scalars_dict, inpu
         [tf.summary.scalar(k, float(scalars_dict[k]), step=step) for k in scalars_dict.keys()]
         
         tf.summary.image("Image", tf.transpose(n_feats, [2, 1, 0, 3]), max_outputs=3, step=step)
+        print("SHAPES", tf.shape(n_labels), tf.shape(n_feats))
         tf.summary.image("Mask", tf.transpose(n_labels, [2, 1, 0, 3]), max_outputs=3, step=step)
         [tf.summary.image(str(i)+"_"+val, tf.transpose(output_map[0, :, :, mid_image:mid_image + step_im, i:(i + 1)], [2, 1, 0, 3]), max_outputs=3, step=step)
          for i,val in enumerate(labels_values)]
