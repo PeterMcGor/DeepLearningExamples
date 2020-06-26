@@ -48,7 +48,7 @@ import horovod.tensorflow as hvd
 import tensorflow as tf
 
 from model.vnet import Vnet, vnet_fn
-from run import train, evaluate, predict, restore_checkpoint
+from run import train, evaluate, predict, restore_checkpoint, train_and_meta_eval
 from utils.cmd_util import PARSER, _cmd_params
 from utils.data_loader_ext import SegmentationLUNADataSet
 from dllogger.logger import Logger, StdOutBackend, JSONStreamBackend, Verbosity
@@ -103,13 +103,16 @@ def main():
 
     
     input_to_model_shape = (128, 128, 64)
+    params["input_shape"] = input_to_model_shape
+    
+    
     dataset = SegmentationLUNADataSet(data_dir=params.data_dir,
                                       json_path=params.json_path,
-                                      training_keys=["Philips_Brilliance16_unknown", "TOSHIBA_Aquilion_V2.02ER003"], 
+                                      training_keys=["Philips_Brilliance16_unknown", "Philips_Brilliance 64_unknown","TOSHIBA_Aquilion_V2.02ER003"], 
                                       test_keys=["TOSHIBA_Aquilion_V2.04ER001"], 
-                                      meta_validation_keys=["Philips_Brilliance 64_unknown"], 
+                                      meta_validation_keys=["SIEMENS_Sensation 64_syngo CT 2007S","Philips_Brilliance 64_unknown", "GE MEDICAL SYSTEMS_LightSpeed VCT_07MW18.4"], 
                                       interpolator = "bspline", 
-                                      shuffle_before_split=False, 
+                                      shuffle_before_split=True, 
                                       test_sample_fields=["image"], 
                                       dst_size=input_to_model_shape, 
                                       batch_size=params.batch_size,
@@ -117,24 +120,84 @@ def main():
                                       num_gpus=hvd.size(),
                                       seed=params.seed)
     
+    
+    """"
+    dataset = SegmentationLUNADataSet(data_dir=params.data_dir,
+                                      json_path=params.json_path,
+                                      training_keys=['GE MEDICAL SYSTEMS_LightSpeed16_06MW03.5',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed16_07MW11.10', 
+                                                     'GE MEDICAL SYSTEMS_LightSpeed16_LightSpeedverrel',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed16_LightSpeedApps401.8_H4.0M4',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed16_LightSpeedApps405I.2_H4.0M5',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed16_LightSpeedApps400.2_H16M3',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Ultra_LightSpeedApps308I.2_H3.1M5',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Ultra_LightSpeedApps305.3_H3.1M4',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Ultra_LightSpeedApps303.1_H3M4',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Ultra_LightSpeedApps305.4_H3.1M4',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Ultra_LightSpeedApps304.3_H3.1M3',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Ultra_unknown',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed QX/i_LightSpeedApps10.5_2.8.2I_H1.3M4',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed QX/i_unknown',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Pro 16_LightSpeedverrel',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Pro 16_06MW03.5',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Pro 16_07MW11.10',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed VCT_06MW03.4',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed VCT_07MW18.4',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed VCT_unknown',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Plus_LightSpeedApps2.4.2_H2.4M5',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Power_LightSpeedApps2.5_hp.me',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Power_LightSpeedverrel',
+                                                     'SIEMENS_Sensation 16_VA70C',
+                                                     'SIEMENS_Sensation 16_VB10B',
+                                                     'SIEMENS_Sensation 16_syngo CT 2006G',
+                                                     'SIEMENS_Sensation 16_VA60B',
+                                                     'SIEMENS_Sensation 64_syngo CT 2005A',
+                                                     'SIEMENS_Sensation 64_syngo CT 2006A',
+                                                     'SIEMENS_Sensation 64_syngo CT 2007S',
+                                                     'SIEMENS_Sensation 64_syngo CT 2005A0',
+                                                     'SIEMENS_Definition_syngo CT 2007C',
+                                                     'SIEMENS_Emotion 6_VA70A'], 
+                                      test_keys=["TOSHIBA_Aquilion_V2.04ER001"], 
+                                      meta_validation_keys=['Philips_Brilliance 16P_unknown',
+                                                            'Philips_Brilliance 40_unknown',
+                                                            'Philips_Brilliance 64_unknown',
+                                                            
+                                                            
+                                                            'Philips_Brilliance16_unknown',
+                                                            'TOSHIBA_Aquilion_V2.04ER001',
+                                                            'TOSHIBA_Aquilion_V2.02ER003'], 
+                                      interpolator = "bspline", 
+                                      shuffle_before_split=True, 
+                                      test_sample_fields=["image"], 
+                                      dst_size=input_to_model_shape, 
+                                      batch_size=params.batch_size,
+                                      gpu_id=hvd.rank(),
+                                      num_gpus=hvd.size(),
+                                      seed=params.seed)
+    """
+    
+    
     # Build the  model
     model = Vnet(n_classes=4)
     model.model(list(input_to_model_shape)+[1]).summary(positions=[0.35,0.65,0.8,1.]) #workaround to summary the model as keras stylis
+    
+    
+    if 'train_and_meta_eval' in params.exec_mode:
+        train_and_meta_eval(params, model, dataset, logger, augment = True)
 
-    if 'train' in params.exec_mode:
+    if 'trainn' in params.exec_mode:
         train(params, model, dataset, logger, augment = True)
 
-    if 'evaluate' in params.exec_mode:
+    if 'evaluaten' in params.exec_mode:
         if hvd.rank() == 0:
             model = restore_checkpoint(model, params.model_dir)
             evaluate(params, model, dataset, logger)
 
-    if 'predict' in params.exec_mode:
+    if 'predictn' in params.exec_mode:
         if hvd.rank() == 0:
             model = restore_checkpoint(model, params.model_dir)
             predict(params, model, dataset, logger)
 
 
 if __name__ == '__main__':
-    
     main()

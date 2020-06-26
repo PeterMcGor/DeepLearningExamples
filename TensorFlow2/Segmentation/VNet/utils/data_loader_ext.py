@@ -152,7 +152,7 @@ class BiiGJsonParser:
         self._training_samples = self.fill_samples(training_keys, all_sample_fields)
         self._validation_samples = None
         self.make_split() # validation_samples is populated from tuples from a subset of the training samples
-        self._meta_validation_samples = self.fill_samples(meta_validation_keys, all_sample_fields) # tuples with ground truth data but not from the training set (new dataset)
+        self._meta_validation_samples = self.fill_samples(meta_validation_keys, all_sample_fields, group_by_id=True) # tuples with ground truth data but not from the training set (new dataset)
         self._test_samples = self.fill_samples(test_keys, test_sample_fields) # tuples without ground truth (or ground truth will be ignored)
         
     @property
@@ -196,9 +196,11 @@ class BiiGJsonParser:
         return self._test_samples
         
               
-    def fill_samples(self, keys_list, to_extract_fields):
+    def fill_samples(self, keys_list, to_extract_fields, group_by_id = False):
         def add_parent_dir(data, sample_dict_key):
             return data if sample_dict_key not in need_complete_path else os.path.join(self.data_dir, data) if data is not None else None
+        if group_by_id:
+            return [[[set_id] + [add_parent_dir(sample_dict.get(k, None), k) for k in to_extract_fields] for sample_dict in self.json_data.get(set_id)] for set_id in keys_list ] if len(keys_list) > 0 else None
         return [[set_id] + [add_parent_dir(sample_dict.get(k, None), k) for k in to_extract_fields] for set_id in keys_list for sample_dict in self.json_data.get(set_id)] if len(keys_list) > 0 else None
     
     def make_split(self): # TODO this method is just correct if the split is performed at the __init__
@@ -266,6 +268,10 @@ class BiiGDataset(ABC):
     @property
     def eval_steps(self):
         return np.ceil(len(self.biig_json.validation_samples) / self._batch_size)
+    
+    @property
+    def eval_size(self):
+        return len(self.biig_json.validation_samples)
 
     @property
     def test_steps(self):
@@ -296,7 +302,7 @@ class BiiGDataset(ABC):
         pass
  
 
-#TODO remember tf.dunction after debugging    
+#TODO remember tf.function after debugging    
 class SegmentationLUNADataSet(BiiGDataset):
     def __init__(self, interpolator=None, **kwargs):
         super().__init__(**kwargs)
@@ -358,15 +364,20 @@ class SegmentationLUNADataSet(BiiGDataset):
 
         return dataset
                      
-    def eval_fn(self):
+    def eval_fn(self, samples=None, repeat=True):
+        def resize_sample(image, label):
+            return resize_image(image, self.dst_size, self.interpolator), resize_image(label, self.dst_size, _SITK_INTERPOLATOR_DICT.get("nearest"))
+        samples = self.biig_json.validation_samples if samples is None else samples
         no_tf_transforms = [resize_sample,
                             lambda x,y: (sitk_to_np(x), sitk_to_np(y)),
                             lambda x,y: (x,treat_non_contiguous_labels(y)),
                             lambda x,y: (self.modality_normalization(x), y)]
         
-        dataset = tf.data.Dataset.from_generator(lambda:self.preprocesing_transforms(self.biig_json.validation_samples, no_tf_transforms), output_types=tuple([tf.string] + self.dst_type))
+        dataset = tf.data.Dataset.from_generator(lambda:self.preprocesing_transforms(samples, no_tf_transforms), output_types=tuple([tf.string] + self.dst_type))
         
         dataset = dataset.cache()
+        if repeat:
+            dataset = dataset.repeat()
         dataset = dataset.batch(self._batch_size)
         dataset = dataset.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
         return dataset 
@@ -519,7 +530,7 @@ if __name__ == '__main__':
                                  data_dir="/lung-data/",
                                  training_keys=["Philips_Brilliance16_unknown", "TOSHIBA_Aquilion_V2.02ER003"], 
                                  test_keys=["TOSHIBA_Aquilion_V2.04ER001"], 
-                                 meta_validation_keys=["Philips_Brilliance 64_unknown"], 
+                                 meta_validation_keys=["Philips_Brilliance 64_unknown", "GE MEDICAL SYSTEMS_LightSpeed VCT_07MW18.4", "SIEMENS_Sensation 64_syngo CT 2007S"], 
                                  interpolator = "bspline", 
                                  shuffle_before_split=False, 
                                  test_sample_fields=["image"], 
@@ -535,10 +546,81 @@ if __name__ == '__main__':
                                    dst_size=(512,512),
                                    batch_size = 1)
     """
+                                   
     
-    fds = ds.train_fn("a")
+    dataset = SegmentationLUNADataSet(data_dir="/lung-data/",
+                                      json_path="/lung-data/data_LUNA.json",
+                                      training_keys=['GE MEDICAL SYSTEMS_LightSpeed16_06MW03.5',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed16_07MW11.10', 
+                                                     'GE MEDICAL SYSTEMS_LightSpeed16_LightSpeedverrel',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed16_LightSpeedApps401.8_H4.0M4',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed16_LightSpeedApps405I.2_H4.0M5',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed16_LightSpeedApps400.2_H16M3',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Ultra_LightSpeedApps308I.2_H3.1M5',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Ultra_LightSpeedApps305.3_H3.1M4',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Ultra_LightSpeedApps303.1_H3M4',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Ultra_LightSpeedApps305.4_H3.1M4',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Ultra_LightSpeedApps304.3_H3.1M3',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Ultra_unknown',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed QX/i_LightSpeedApps10.5_2.8.2I_H1.3M4',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed QX/i_unknown',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Pro 16_LightSpeedverrel',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Pro 16_06MW03.5',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Pro 16_07MW11.10',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed VCT_06MW03.4',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed VCT_07MW18.4',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed VCT_unknown',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Plus_LightSpeedApps2.4.2_H2.4M5',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Power_LightSpeedApps2.5_hp.me',
+                                                     'GE MEDICAL SYSTEMS_LightSpeed Power_LightSpeedverrel',
+                                                     'SIEMENS_Sensation 16_VA70C',
+                                                     'SIEMENS_Sensation 16_VB10B',
+                                                     'SIEMENS_Sensation 16_syngo CT 2006G',
+                                                     'SIEMENS_Sensation 16_VA60B',
+                                                     'SIEMENS_Sensation 64_syngo CT 2005A',
+                                                     'SIEMENS_Sensation 64_syngo CT 2006A',
+                                                     'SIEMENS_Sensation 64_syngo CT 2007S',
+                                                     'SIEMENS_Sensation 64_syngo CT 2005A0',
+                                                     'SIEMENS_Definition_syngo CT 2007C',
+                                                     'SIEMENS_Emotion 6_VA70A',
+                                                     'Philips_Brilliance 16P_unknown',
+                                                     'Philips_Brilliance 40_unknown',
+                                                     'Philips_Brilliance 64_unknown',
+                                                     'Philips_Brilliance16_unknown',
+                                                     'TOSHIBA_Aquilion_V2.04ER001',
+                                                     'TOSHIBA_Aquilion_V2.02ER003'], 
+                                      test_keys=["TOSHIBA_Aquilion_V2.04ER001"], 
+                                      meta_validation_keys=['Philips_Brilliance 16P_unknown',
+                                                            'Philips_Brilliance 40_unknown',
+                                                            'Philips_Brilliance 64_unknown',
+                                                            'Philips_Brilliance16_unknown',
+                                                            'TOSHIBA_Aquilion_V2.04ER001',
+                                                            'TOSHIBA_Aquilion_V2.02ER003'],
+                                      train_split = 1,
+                                      interpolator = "bspline", 
+                                      shuffle_before_split=False, 
+                                      test_sample_fields=["image"], 
+                                      dst_size=(128, 128, 64), 
+                                      batch_size=4)
+    for sample in dataset.biig_json.training_samples:
+        image = sample[1]
+        label = sample[2]
+        print("Opening image "+image)
+        sitk.ReadImage(image)
+        print("Opening label "+label)
+        sitk.ReadImage(label)
+        print("")
+        
+    
+    
+    #fds = ds.train_fn(True)
     print("Iterating over samples")
     for iteration, (id_data,images, labels) in enumerate(ds.train_fn(augment=True)):
+        break
+        
+    #fds_eval = ds.eval_fn()
+    print("Iterating over samples")
+    for iteration_eval, (id_data_eval,images_eval, labels_eval) in enumerate(ds.eval_fn()):
         break
     
     """

@@ -19,7 +19,7 @@ from munch import Munch
 PARSER = argparse.ArgumentParser(description="UNet-medical")
 
 PARSER.add_argument('--exec_mode',
-                    choices=['train', 'train_and_predict', 'predict', 'evaluate', 'train_and_evaluate'],
+                    choices=['train', 'train_and_predict', 'predict', 'evaluate', 'train_and_evaluate', 'train_and_meta_eval'],
                     type=str,
                     default='train_and_evaluate',
                     help="""Execution mode of running the model""")
