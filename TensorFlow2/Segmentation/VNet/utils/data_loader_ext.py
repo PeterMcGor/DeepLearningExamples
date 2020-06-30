@@ -82,24 +82,6 @@ def treat_non_contiguous_labels(labels):  # one hot labels encoding cause proble
 
 
 
-def parse_sitk(path, dtype, dst_size, interpolator, normalization=None, modality=None, **kwargs):
-    """
-    **kwars for load image
-    """
-    sitk_image = load_image(path, **kwargs)
-    sitk_image = resize_image(sitk_image,
-                              dst_size=dst_size,
-                              interpolator=interpolator)
-    image = sitk_to_np(sitk_image)
-
-    if modality and 'CT' not in modality:
-        if normalization:
-            image = stats.zscore(image, axis=None)
-    elif modality:
-        pass  # do nothing for CT
-        # raise NotImplementedError #original
-    return image
-
 def sitk_to_np(sitk_img):
     # TODO try with more than 3D
     return np.transpose(sitk.GetArrayFromImage(sitk_img))
@@ -114,6 +96,7 @@ def resize_image(sitk_img,
         [sz * spc / nsz for nsz, sz, spc in zip(dst_size, sitk_img.GetSize(), sitk_img.GetSpacing())])
     
     return sitk.Resample(sitk_img, reference_image, sitk.Transform(3, sitk.sitkIdentity), interpolator)
+
 
 
 class BiiGJsonParser:
@@ -254,8 +237,13 @@ class BiiGDataset(ABC):
             return image, load_image(sample[2], out_dims=self.dimension, z_slice=z, channel=ch)
     
     def modality_normalization(self, np_image):
-        if  "CT" not in self.biig_json.modality:
+        if "CT" not in self.biig_json.modality:
             return stats.zscore(np_image, axis=None) # zscore--> mean 0, std 1
+        if "CT" in self.biig_json.modality:
+            np_image[np_image < -1000] = -1000
+            np_image[np_image > 1000] = 1000
+            
+            
         return np_image
              
     @property
@@ -313,6 +301,7 @@ class SegmentationLUNADataSet(BiiGDataset):
     def set_interpolator(self, interpolator):
         assert interpolator in _SITK_INTERPOLATOR_DICT.keys(), "Incorrect interpolator, must be one of the following "+str(list(_SITK_INTERPOLATOR_DICT.keys()))
         self.interpolator = _SITK_INTERPOLATOR_DICT.get(interpolator)
+    
         
     
     @tf.function
@@ -333,6 +322,10 @@ class SegmentationLUNADataSet(BiiGDataset):
     def train_fn(self, augment):
         def resize_sample(image, label):
             return resize_image(image, self.dst_size, self.interpolator), resize_image(label, self.dst_size, _SITK_INTERPOLATOR_DICT.get("nearest"))
+        def flip_z_axes(image, label):
+            do_flip = np.random.rand() > 0.5
+            #print("DO FLIP", do_flip)
+            return sitk.Flip(image, [False, False, do_flip]), sitk.Flip(label, [False, False, do_flip])
         
         no_tf_transforms = [resize_sample,
                             lambda x,y: (sitk_to_np(x), sitk_to_np(y)),
@@ -340,6 +333,7 @@ class SegmentationLUNADataSet(BiiGDataset):
                             lambda x,y: (self.modality_normalization(x), y)]
         if augment:
             no_tf_transforms = [resize_sample,
+                                lambda x,y: flip_z_axes(x,y),
                                 lambda x,y: (sitk_to_np(x), sitk_to_np(y)),
                                 lambda x,y: (x,treat_non_contiguous_labels(y)),
                                 lambda x,y: (self.modality_normalization(x), y)]
@@ -602,14 +596,36 @@ if __name__ == '__main__':
                                       test_sample_fields=["image"], 
                                       dst_size=(128, 128, 64), 
                                       batch_size=4)
+    import pandas as pd
+    lista = []
     for sample in dataset.biig_json.training_samples:
+        id_data = sample[0]
         image = sample[1]
         label = sample[2]
         print("Opening image "+image)
-        sitk.ReadImage(image)
+        image = sitk.ReadImage(image)
+        image_np = sitk.GetArrayFromImage(image)
+        mean = np.mean(image_np)
+        median = np.median(image_np)
+        minim = np.min(image_np)
+        maxi = np.max(image_np)
+        image_dict = {"file":sample[1],"id": id_data, "mean":mean, "median":median, "min":minim, "max":maxi, "unique":0}
+        print(image_dict)
         print("Opening label "+label)
-        sitk.ReadImage(label)
+        label = sitk.ReadImage(label)
+        label_np = sitk.GetArrayFromImage(label)
+        mean_label = np.mean(label_np)
+        median_label = np.median(label_np)
+        minim_label = np.min(label_np)
+        maxi_label = np.max(label_np)
+        uni = np.unique(label_np)
+        label_dict = {"file":sample[2],"id": id_data, "mean":mean_label, "median":median_label, "min":minim_label, "max":maxi_label, "unique":uni}
+        print(label_dict)
         print("")
+        lista.append(image_dict)
+        lista.append(label_dict)
+    df = pd.DataFrame(lista)
+    df.to_csv("/lusair/data/stats_LUNA.csv")
         
     
     

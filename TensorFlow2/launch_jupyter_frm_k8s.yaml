@@ -1,0 +1,83 @@
+kind: Job
+apiVersion: batch/v1
+metadata:
+  name: nvidia-lab
+spec:
+  parallelism: 1
+  completions: 1
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        job-name: nvidia-lab
+    spec:
+      volumes:
+        - name: lung-data
+          hostPath:
+            path: /srv/bcss/pedro/LUNA16
+            type: Directory
+        - name: lusair
+          hostPath:
+            path: /srv/bcss/pedro/LuSAIR
+            type: Directory
+        - name: data
+          hostPath:
+            path: /srv/bcss/pedro/uptodate_dlexamples/DeepLearningExamples/TensorFlow2/Segmentation/UNet_Medical/data
+            type: Directory
+        - name: results
+          hostPath:
+            path: /srv/bcss/pedro/uptodate_dlexamples/DeepLearningExamples/TensorFlow2/Segmentation/UNet_Medical/results_test_unet_tf2
+            type: Directory
+        - name: code
+          hostPath:
+            path: /srv/bcss/pedro/uptodate_dlexamples/DeepLearningExamples/TensorFlow2/Segmentation/UNet_Medical
+            type: Directory
+        - name: code-forked
+          hostPath:
+            path: /srv/bcss/pedro/uptodate_dlexamples/forked/DeepLearningExamples
+            type: Directory
+      containers:
+        - name: nvidia-lab
+          image: '163.117.178.17:5000/unet_tf2'
+          ports:
+          - containerPort: 8888
+          command:
+            - jupyter-lab
+          args:
+            - '--notebook-dir'
+            - /
+          workingDir: /code
+          resources:
+            limits:
+              cpu: '8'
+              memory: 16Gi
+              nvidia.com/gpu: '1'
+          volumeMounts:
+            - name: lung-data
+              mountPath: /lung-data
+            - name: lusair
+              mountPath: /lusair
+            - name: data
+              mountPath: /data
+            - name: results
+              mountPath: /results
+            - name: code
+              mountPath: /code
+            - name: code-forked
+              mountPath: /code-forked
+          imagePullPolicy: Always
+      restartPolicy: OnFailure
+      priorityClassName: high
+      
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nvidia-lab-service 
+spec:
+  type: NodePort
+  ports:
+  - port: 8888 
+    targetPort: 8888
+  selector:
+    job-name: nvidia-lab 

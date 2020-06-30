@@ -123,6 +123,7 @@ def main():
     
     
     """"
+ 
     dataset = SegmentationLUNADataSet(data_dir=params.data_dir,
                                       json_path=params.json_path,
                                       training_keys=['GE MEDICAL SYSTEMS_LightSpeed16_06MW03.5',
@@ -175,7 +176,9 @@ def main():
                                       gpu_id=hvd.rank(),
                                       num_gpus=hvd.size(),
                                       seed=params.seed)
+                                      
     """
+    
     
     
     # Build the  model

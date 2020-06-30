@@ -100,8 +100,7 @@ def train_and_meta_eval(params, model, dataset, logger, augment = True):
             crossentropy_loss, dice_loss = partial_losses(output_map, labels)
             added_losses = tf.add(crossentropy_loss, dice_loss, name="total_loss_ref")
             loss = added_losses + params.weight_decay * tf.add_n(
-                [tf.nn.l2_loss(v) for v in model.trainable_variables
-                 if 'batch_normalization' not in v.name])
+                [tf.nn.l2_loss(v) for v in model.trainable_variables if 'batch_normalization' not in v.name])
 
             if params.use_amp:
                 loss = optimizer.get_scaled_loss(loss)
